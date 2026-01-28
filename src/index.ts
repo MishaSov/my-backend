@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import prisma from './lib/prisma';
 import userRoutes from './routes/userRoutes';
+import authRoutes from './routes/authRoutes';
 
 dotenv.config();
 
@@ -16,6 +17,7 @@ app.use(cors({
 
 // Middleware для JSON
 app.use(express.json());
+app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 
 // Проверка подключения к БД
@@ -45,28 +47,20 @@ app.get('/api/test', (req, res) => {
   });
 });
 
-// Пример API для пользователей
-app.get('/api/users', async (req, res) => {
-  try {
-    const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        createdAt: true
-      }
-    });
-    res.json(users);
-  } catch (error) {
-    console.error('Error fetching users:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
 // Простой маршрут
 app.get('/', (req, res) => {
-  res.json({ message: 'Hello from Node.js!' });
+  res.json({ 
+    message: 'API сервер работает!',
+    endpoints: [
+      'GET /api/health - Проверка БД',
+      'GET /api/test - Тестовый endpoint',
+      'POST /api/auth/register - Регистрация',
+      'POST /api/auth/login - Вход',
+      'GET /api/users - Получить пользователей',
+      'POST /api/users - Создать пользователя'
+    ]
+  });
 });
 
 
@@ -80,4 +74,9 @@ process.on('SIGINT', async () => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 Database: ${process.env.DATABASE_URL?.split('@')[1]}`);
+  console.log(`📡 Доступные эндпоинты:`);
+  console.log(`  POST http://localhost:${PORT}/api/auth/register`);
+  console.log(`  POST http://localhost:${PORT}/api/auth/login`);
+  console.log(`  GET  http://localhost:${PORT}/api/users`);
+  console.log(`  POST http://localhost:${PORT}/api/users`);
 });
