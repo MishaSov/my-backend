@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import {
-  createUser,
+  // createUser,
   getUsers,
   getUserById,
 //   updateUser,
@@ -10,13 +10,6 @@ import {
 
 const router = Router();
 
-// Публичные маршруты
-router.post('/', createUser);
-router.get('/', getUsers);
-router.get('/:id', getUserById);
 
-// Защищенные маршруты (требуют аутентификации)
-// router.put('/:id', authMiddleware, updateUser);
-// router.delete('/:id', authMiddleware, deleteUser);
 
 export default router;

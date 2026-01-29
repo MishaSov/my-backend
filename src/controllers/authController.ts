@@ -10,8 +10,21 @@ export const register = async (req: Request, res: Response) => {
     const { email, name, password } = req.body;
 
     // Валидация
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+    if (!email || !password || !name) {
+      return res.status(400).json({
+        error: 'Email, name and password are required'
+      });
+    }
+
+    // Валидация email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    // Проверка длины пароля
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
     // Проверка существующего пользователя
@@ -31,13 +44,16 @@ export const register = async (req: Request, res: Response) => {
       data: {
         email,
         name,
-        password: hashedPassword
+        password: hashedPassword,
+        role: 'USER' // Указываем роль по умолчанию
       },
       select: {
         id: true,
         email: true,
         name: true,
-        role: true
+        role: true,
+        createdAt: true,
+        updatedAt: true
       }
     });
 
@@ -45,7 +61,7 @@ export const register = async (req: Request, res: Response) => {
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '5m' }
     );
 
     res.status(201).json({
@@ -83,7 +99,7 @@ export const login = async (req: Request, res: Response) => {
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '5m' }
     );
 
     // Не возвращаем пароль в ответе

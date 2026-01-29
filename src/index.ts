@@ -74,9 +74,4 @@ process.on('SIGINT', async () => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 Database: ${process.env.DATABASE_URL?.split('@')[1]}`);
-  console.log(`📡 Доступные эндпоинты:`);
-  console.log(`  POST http://localhost:${PORT}/api/auth/register`);
-  console.log(`  POST http://localhost:${PORT}/api/auth/login`);
-  console.log(`  GET  http://localhost:${PORT}/api/users`);
-  console.log(`  POST http://localhost:${PORT}/api/users`);
 });
