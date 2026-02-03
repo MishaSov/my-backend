@@ -1,77 +1,122 @@
-import express from 'express';
+import express, { NextFunction, Request, Response, response } from 'express';
+import config from 'config'
 import cors from 'cors';
+import morgan from 'morgan';
+import cookieParser from 'cookie-parser';
+import validateEnv from './utils/validateEnv';
+import { PrismaClient } from '@prisma/client';
 import dotenv from 'dotenv';
-import prisma from './lib/prisma';
-import userRoutes from './routes/userRoutes';
-import authRoutes from './routes/authRoutes';
+import userRouter from './routes/user.routes';
+import authRouter from './routes/auth.routes';
+import AppError from './utils/appError';
+import redisClient from './utils/connectRedis';
 
 dotenv.config();
 
+validateEnv();
+
+const prisma = new PrismaClient();
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-app.use(cors({
-  origin: 'http://localhost:5173', // или порт вашего Vue приложения
-  credentials: true
-}));
 
-// Middleware для JSON
-app.use(express.json());
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-
-// Проверка подключения к БД
-app.get('/api/health', async (req, res) => {
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    res.json({ 
-      status: 'ok', 
-      database: 'connected',
-      timestamp: new Date().toISOString()
+async function bootstrap() {
+  // Testing
+  app.get('/api/healthchecker', async (_, res: Response) => {
+    const message = await redisClient.get('try');
+    res.status(200).json({
+      status: 'success',
+      message,
     });
-  } catch (error) {
-    res.status(500).json({ 
-      status: 'error', 
-      database: 'disconnected',
-      error: error instanceof Error ? error.message : 'Unknown error'
+  });
+
+  // TEMPLATE ENGINE
+  app.set('view engine', 'pug');
+  app.set('views', `${__dirname}/views`);
+
+  // MIDDLEWARE
+
+  // 1.Body Parser
+  app.use(express.json({ limit: '10kb' }));
+
+  // 2. Cookie Parser
+  app.use(cookieParser());
+
+  // 2. Cors
+  app.use(
+    cors({
+      origin: [config.get<string>('origin')],
+      credentials: true,
+    })
+  );
+
+  // 3. Logger
+  if (process.env.NODE_ENV === 'development') app.use(morgan('dev'));
+
+  // ROUTES
+  app.use('/api/auth', authRouter);
+  app.use('/api/users', userRouter);
+
+  // Testing
+  app.get('/api/healthchecker', (_, res: Response) => {
+    res.status(200).json({
+      status: 'success',
+      message: 'Welcome to NodeJs with Prisma and PostgreSQL',
     });
-  }
-});
-
-
-// Тестовый API для Vue
-app.get('/api/test', (req, res) => {
-  res.json({ 
-    status: 'success', 
-    data: { message: 'API работает!' } 
   });
-});
 
+    // UNHANDLED ROUTES (path-to-regexp v7+ requires a named wildcard, e.g. *path)
+    app.all('*path', (req: Request, res: Response, next: NextFunction) => {
+      next(new AppError(404, `Route ${req.originalUrl} not found`));
+    });
 
-// Простой маршрут
-app.get('/', (req, res) => {
-  res.json({ 
-    message: 'API сервер работает!',
-    endpoints: [
-      'GET /api/health - Проверка БД',
-      'GET /api/test - Тестовый endpoint',
-      'POST /api/auth/register - Регистрация',
-      'POST /api/auth/login - Вход',
-      'GET /api/users - Получить пользователей',
-      'POST /api/users - Создать пользователя'
-    ]
+  // GLOBAL ERROR HANDLER
+  app.use((err: AppError, req: Request, res: Response, next: NextFunction) => {
+    err.status = err.status || 'error';
+    err.statusCode = err.statusCode || 500;
+
+    res.status(err.statusCode).json({
+      status: err.status,
+      message: err.message,
+    });
   });
-});
+
+  const port = config.get<number>('port');
+  app.listen(port, () => {
+    console.log(`Server on port: ${port}`);
+  });
+}
+
+bootstrap()
+  .catch((err) => {
+    throw err;
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
+
+// // Проверка подключения к БД
+// app.get('/api/health', async (req, res) => {
+//   try {
+//     await prisma.$queryRaw`SELECT 1`;
+//     res.json({
+//       status: 'ok',
+//       database: 'connected',
+//       timestamp: new Date().toISOString()
+//     });
+//   } catch (error) {
+//     res.status(500).json({
+//       status: 'error',
+//       database: 'disconnected',
+//       error: error instanceof Error ? error.message : 'Unknown error'
+//     });
+//   }
+// });
 
 
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  await prisma.$disconnect();
-  console.log('Prisma disconnected');
-  process.exit(0);
-});
-
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📊 Database: ${process.env.DATABASE_URL?.split('@')[1]}`);
-});
+// // Тестовый API для Vue
+// app.get('/api/test', (req, res) => {
+//   res.json({
+//     status: 'success',
+//     data: { message: 'API работает!' }
+//   });
+// });
