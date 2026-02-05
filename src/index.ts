@@ -10,6 +10,14 @@ import userRouter from './routes/user.routes';
 import authRouter from './routes/auth.routes';
 import AppError from './utils/appError';
 import redisClient from './utils/connectRedis';
+import nodemailer from 'nodemailer';
+// (async function () {
+//   console.log('работает');
+  
+//   const credentials = await nodemailer.createTestAccount();
+//   console.log('данные smpy ', credentials);
+// })();
+
 
 dotenv.config();
 

@@ -1,17 +1,24 @@
 import crypto from 'crypto';
 import { CookieOptions, NextFunction, Request, Response } from 'express';
 import bcrypt from 'bcrypt';
-import { LoginUserInput, RegisterUserInput } from '../schemas/user.schema';
+import {
+  LoginUserInput,
+  RegisterUserInput,
+  VerifyEmailInput,
+} from '../schemas/user.schema';
 import {
   createUser,
   findUniqueUser,
+  findUser,
   signTokens,
+  updateUser,
 } from '../services/user.service';
 import { Prisma } from '@prisma/client';
 import config from 'config';
 import AppError from '../utils/appError';
 import redisClient from '../utils/connectRedis';
 import { signJwt, verifyJwt } from '../utils/jwt';
+import Email from '../utils/email';
 
 // ? Cookie Options Here
 
@@ -43,6 +50,7 @@ export const registerUserHandler = async (
   res: Response,
   next: NextFunction
 ) => {
+  console.log('Register attempt for email:', req.body.email.toLowerCase())
   try {
     const hashedPassword = await bcrypt.hash(req.body.password, 12);
 
@@ -59,12 +67,36 @@ export const registerUserHandler = async (
       verificationCode,
     });
 
-    res.status(201).json({
-      status: 'success',
-      data: {
-        user,
-      },
-    });
+
+    try {
+
+      const redirectUrl = `${config.get<string>(
+        'origin'
+      )}/verifyemail/${verifyCode}`;
+      console.log('Sending email to:', user.email);
+      console.log('Redirect URL:', redirectUrl);
+
+      await new Email(user, redirectUrl).sendVerificationCode();
+      await updateUser({ id: user.id }, { verificationCode });
+
+      res.status(201).json({
+        status: 'success',
+        message:
+          'An email with a verification code has been sent to your email',
+      });
+    } catch (emailError) {
+      console.error('Email sending failed:', emailError);
+      await updateUser({ id: user.id }, { verificationCode: null });
+      return res.status(500).json({
+        message: 'User registered, but email verification could not be sent',
+        note: 'Please contact support to verify your email',
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email
+        }
+      });
+    }
   } catch (err: any) {
     if (err instanceof Prisma.PrismaClientKnownRequestError) {
       if (err.code === 'P2002') {
@@ -78,6 +110,49 @@ export const registerUserHandler = async (
   }
 };
 
+//вариант без верификации почты
+// export const registerUserHandler = async (
+//   req: Request<{}, {}, RegisterUserInput>,
+//   res: Response,
+//   next: NextFunction
+// ) => {
+//   try {
+//     const hashedPassword = await bcrypt.hash(req.body.password, 12);
+
+//     const verifyCode = crypto.randomBytes(32).toString('hex');
+//     const verificationCode = crypto
+//       .createHash('sha256')
+//       .update(verifyCode)
+//       .digest('hex');
+
+//     const user = await createUser({
+//       name: req.body.name,
+//       email: req.body.email.toLowerCase(),
+//       password: hashedPassword,
+//       verificationCode,
+//     });
+
+//     res.status(201).json({
+//       status: 'success',
+//       data: {
+//         user,
+//       },
+//     });
+//   } catch (err: any) {
+//     if (err instanceof Prisma.PrismaClientKnownRequestError) {
+//       if (err.code === 'P2002') {
+//         return res.status(409).json({
+//           status: 'fail',
+//           message: 'Email already exist, please use another email address',
+//         });
+//       }
+//     }
+//     next(err);
+//   }
+// };
+
+
+
 export const loginUserHandler = async (
   req: Request<{}, {}, LoginUserInput>,
   res: Response,
@@ -90,6 +165,16 @@ export const loginUserHandler = async (
       { email: email.toLowerCase() },
       { id: true, email: true, verified: true, password: true }
     );
+
+    // Check if user is verified
+    if (!user.verified) {
+      return next(
+        new AppError(
+          401,
+          'You are not verified, please verify your email to login'
+        )
+      );
+    }
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return next(new AppError(400, 'Invalid email or password'));
@@ -196,120 +281,38 @@ export const logoutUserHandler = async (
   }
 };
 
-// import { Request, Response } from 'express';
-// import bcrypt from 'bcrypt';
-// import jwt from 'jsonwebtoken';
-// import prisma from '../lib/prisma';
+export const verifyEmailHandler = async (
+  req: Request<VerifyEmailInput>,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const verificationCode = crypto
+      .createHash('sha256')
+      .update(req.params.verificationCode)
+      .digest('hex');
 
-// const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+    const user = await updateUser(
+      { verificationCode },
+      { verified: true, verificationCode: null },
+      { email: true }
+    );
 
-// export const register = async (req: Request, res: Response) => {
-//   try {
-//     const { email, name, password } = req.body;
+    if (!user) {
+      return next(new AppError(401, 'Could not verify email'));
+    }
 
-//     // Валидация
-//     if (!email || !password || !name) {
-//       return res.status(400).json({
-//         error: 'Email, name and password are required'
-//       });
-//     }
-
-//     // Валидация email
-//     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-//     if (!emailRegex.test(email)) {
-//       return res.status(400).json({ error: 'Invalid email format' });
-//     }
-
-//     // Проверка длины пароля
-//     if (password.length < 6) {
-//       return res.status(400).json({ error: 'Password must be at least 6 characters' });
-//     }
-
-//     // Проверка существующего пользователя
-//     const existingUser = await prisma.user.findUnique({
-//       where: { email }
-//     });
-
-//     if (existingUser) {
-//       return res.status(400).json({ error: 'User already exists' });
-//     }
-
-//     // Хэширование пароля
-//     const hashedPassword = await bcrypt.hash(password, 12);
-
-//     // Создание пользователя
-//     const user = await prisma.user.create({
-//       data: {
-//         email,
-//         name,
-//         password: hashedPassword,
-//         role: 'USER' // Указываем роль по умолчанию
-//       },
-//       select: {
-//         id: true,
-//         email: true,
-//         name: true,
-//         role: true,
-//         createdAt: true,
-//         updatedAt: true
-//       }
-//     });
-
-//     // Генерация JWT токена
-//     const token = jwt.sign(
-//       { userId: user.id, email: user.email, role: user.role },
-//       JWT_SECRET,
-//       { expiresIn: '5m' }
-//     );
-
-//     res.status(201).json({
-//       user,
-//       token,
-//       message: 'Registration successful'
-//     });
-//   } catch (error) {
-//     console.error('Registration error:', error);
-//     res.status(500).json({ error: 'Internal server error' });
-//   }
-// };
-
-// export const login = async (req: Request, res: Response) => {
-//   try {
-//     const { email, password } = req.body;
-
-//     // Найти пользователя
-//     const user = await prisma.user.findUnique({
-//       where: { email }
-//     });
-
-//     if (!user) {
-//       return res.status(401).json({ error: 'Invalid credentials' });
-//     }
-
-//     // Проверить пароль
-//     const isValidPassword = await bcrypt.compare(password, user.password);
-
-//     if (!isValidPassword) {
-//       return res.status(401).json({ error: 'Invalid credentials' });
-//     }
-
-//     // Генерация токена
-//     const token = jwt.sign(
-//       { userId: user.id, email: user.email, role: user.role },
-//       JWT_SECRET,
-//       { expiresIn: '5m' }
-//     );
-
-//     // Не возвращаем пароль в ответе
-//     const { password: _, ...userWithoutPassword } = user;
-
-//     res.json({
-//       user: userWithoutPassword,
-//       token,
-//       message: 'Login successful'
-//     });
-//   } catch (error) {
-//     console.error('Login error:', error);
-//     res.status(500).json({ error: 'Internal server error' });
-//   }
-// };
+    res.status(200).json({
+      status: 'success',
+      message: 'Email verified successfully',
+    });
+  } catch (err: any) {
+    if (err.code === 'P2025') {
+      return res.status(403).json({
+        status: 'fail',
+        message: `Verification code is invalid or user doesn't exist`,
+      });
+    }
+    next(err);
+  }
+};
