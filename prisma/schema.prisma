@@ -26,25 +26,51 @@ datasource db {
 //   @@map("users")
 // }
 
-model User{
-  @@map(name: "users")
+model User {
 
-  id String  @id @default(uuid())
-  name String  @db.VarChar(255)
-  email String @unique
-  photo String? @default("default.png")
-  verified Boolean? @default(false) 
-  
+  id       String   @id @default(uuid())
+  name     String
+  email    String   @unique
+  photo    String?  @default("default.png")
+  verified Boolean? @default(false)
+
   password String
-  role RoleEnumType? @default(user)
+  role     RoleEnumType? @default(user)
 
-  verificationCode String? @db.Text @unique
+  verificationCode String? @unique @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  provider           String?
+  passwordResetToken String?
+  passwordResetAt    DateTime?
+
+  posts Post[]
+
   @@unique([email, verificationCode])
   @@index([email, verificationCode])
+  @@map(name: "users")
+}
+
+model Post {
+
+  id        String   @id @default(uuid())
+  title     String
+  content   String   @db.Text
+  image     String?  @default("default.png")
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связь с User
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  // Индексы для оптимизации
+  @@index([authorId])
+  @@index([createdAt])
+  @@map(name: "posts")
 }
 
 enum RoleEnumType {

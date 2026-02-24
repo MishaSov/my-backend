@@ -4,7 +4,12 @@ import { omit } from "lodash";
 import redisClient from '../utils/connectRedis';
 import { signJwt } from '../utils/jwt';
 
-export const excludedFields = ['password', 'verified', 'verificationCode'];
+export const excludedFields = [
+  'password',
+  'verified',
+  'verificationCode',
+  "passwordResetAt",
+  "passwordResetToken",];
 
 const prisma = new PrismaClient();
 
@@ -20,6 +25,13 @@ export const findUser = async (
 ) => {
   return (await prisma.user.findFirst({
     where,
+    select,
+  })) as User;
+};
+
+export const findUserById = async (userId: string, select?: Prisma.UserSelect) => {
+  return (await prisma.user.findUnique({
+    where: { id: userId },
     select,
   })) as User;
 };
